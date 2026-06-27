@@ -41,6 +41,15 @@ pub struct LfoParams {
     pub target: LfoTarget,
 }
 
+/// Master-bus reverb. `mix` blends wet against dry, `size` scales the room, and
+/// `decay` sets how long the tail rings. All in `[0, 1]`.
+#[derive(Debug, Clone, Copy)]
+pub struct ReverbParams {
+    pub mix: f32,
+    pub size: f32,
+    pub decay: f32,
+}
+
 /// The full synth patch. `Clone` is cheap (plain data), which lets the audio
 /// thread take a snapshot without locking for the duration of a render block.
 #[derive(Debug, Clone, Copy)]
@@ -50,6 +59,7 @@ pub struct SynthParams {
     pub amp_env: AdsrSettings,
     pub filter_env: FilterEnvParams,
     pub lfo: LfoParams,
+    pub reverb: ReverbParams,
     pub master_volume: f32,
 }
 
@@ -78,6 +88,11 @@ impl Default for SynthParams {
                 rate: 5.0,
                 depth: 0.0,
                 target: LfoTarget::Off,
+            },
+            reverb: ReverbParams {
+                mix: 0.0,
+                size: 0.5,
+                decay: 0.5,
             },
             master_volume: 0.8,
         }
@@ -145,6 +160,10 @@ pub fn float_params() -> Vec<FloatParam> {
 
         fp("lfo.rate",  "LFO Rate",  0.0, 20.0, 5.0, "Hz", |p| p.lfo.rate,  |p, v| p.lfo.rate = v),
         fp("lfo.depth", "LFO Depth", 0.0, 1.0, 0.0, "",    |p| p.lfo.depth, |p, v| p.lfo.depth = v),
+
+        fp("reverb.mix",   "Reverb Mix",   0.0, 1.0, 0.0, "", |p| p.reverb.mix,   |p, v| p.reverb.mix = v),
+        fp("reverb.size",  "Reverb Size",  0.0, 1.0, 0.5, "", |p| p.reverb.size,  |p, v| p.reverb.size = v),
+        fp("reverb.decay", "Reverb Decay", 0.0, 1.0, 0.5, "", |p| p.reverb.decay, |p, v| p.reverb.decay = v),
 
         fp("master.volume", "Master Volume", 0.0, 1.0, 0.8, "", |p| p.master_volume, |p, v| p.master_volume = v),
     ]

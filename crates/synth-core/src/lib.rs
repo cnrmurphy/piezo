@@ -14,6 +14,7 @@ pub mod filter;
 pub mod lfo;
 pub mod osc;
 pub mod params;
+pub mod reverb;
 pub mod voice;
 
 pub use engine::Synth;

@@ -6,13 +6,14 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-const GROUP_ORDER = ["osc1", "osc2", "amp_env", "filter_env", "lfo", "master"];
+const GROUP_ORDER = ["osc1", "osc2", "amp_env", "filter_env", "lfo", "reverb", "master"];
 const GROUP_LABELS = {
   osc1: "Oscillator 1",
   osc2: "Oscillator 2",
   amp_env: "Amp Envelope",
   filter_env: "Filter Envelope",
   lfo: "LFO",
+  reverb: "Reverb",
   master: "Master",
 };
 

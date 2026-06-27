@@ -3,6 +3,7 @@
 
 use crate::lfo::Lfo;
 use crate::params::SynthParams;
+use crate::reverb::Reverb;
 use crate::voice::Voice;
 
 const DEFAULT_POLYPHONY: usize = 8;
@@ -12,6 +13,7 @@ pub struct Synth {
     params: SynthParams,
     voices: Vec<Voice>,
     lfo: Lfo,
+    reverb: Reverb,
     /// Round-robin pointer for voice stealing.
     next_voice: usize,
 }
@@ -27,6 +29,7 @@ impl Synth {
             params: SynthParams::default(),
             voices: (0..voices.max(1)).map(|_| Voice::new(sample_rate)).collect(),
             lfo: Lfo::new(sample_rate),
+            reverb: Reverb::new(sample_rate),
             next_voice: 0,
         }
     }
@@ -83,7 +86,9 @@ impl Synth {
             for v in &mut self.voices {
                 mix += v.next_sample(&self.params, lfo);
             }
-            *sample = (mix * self.params.master_volume).clamp(-1.0, 1.0);
+            let rv = self.params.reverb;
+            let wet = self.reverb.process(mix, rv.mix, rv.size, rv.decay);
+            *sample = (wet * self.params.master_volume).clamp(-1.0, 1.0);
         }
     }
 }
