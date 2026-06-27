@@ -13,10 +13,19 @@ use crate::llm::ToolDef;
 
 pub const SET_PARAMETER: &str = "set_parameter";
 pub const SET_CHOICE: &str = "set_choice";
+pub const GET_CURRENT_PATCH: &str = "get_current_patch";
 
 /// The tools the agent may call to shape the sound.
 pub fn tool_defs() -> Vec<ToolDef> {
     vec![
+        ToolDef {
+            name: GET_CURRENT_PATCH.to_string(),
+            description: "Read the synth's current parameter values. Call this \
+                before making a relative change (e.g. \"brighter\", \"less \
+                resonance\") so you adjust from the actual current settings."
+                .to_string(),
+            input_schema: json!({ "type": "object", "properties": {} }),
+        },
         ToolDef {
             name: SET_PARAMETER.to_string(),
             description: "Set a numeric synth parameter to a value. The value is \
@@ -54,11 +63,13 @@ pub fn system_prompt() -> String {
     let mut s = String::from(
         "You are the sound designer for a two-oscillator subtractive synthesizer. \
          The user describes a sound in plain English; you shape it by calling the \
-         set_parameter and set_choice tools. Make several coordinated edits when a \
-         request calls for it, then briefly explain in one or two sentences what \
-         you changed and why. Signal path per voice: two oscillators, each through \
-         its own filter, summed, then an amplitude envelope; a filter envelope and \
-         an LFO add movement.\n\nNumeric parameters (name: range unit):\n",
+         set_parameter and set_choice tools. For a relative request like \"brighter\" \
+         or \"less resonance\", first call get_current_patch so you adjust from the \
+         actual current values. Make several coordinated edits when a request calls \
+         for it, then briefly explain in one or two sentences what you changed and \
+         why. Signal path per voice: two oscillators, each through its own filter, \
+         summed, then an amplitude envelope; a filter envelope and an LFO add \
+         movement.\n\nNumeric parameters (name: range unit):\n",
     );
     for p in float_params() {
         let unit = if p.unit.is_empty() { String::new() } else { format!(" {}", p.unit) };
@@ -67,6 +78,23 @@ pub fn system_prompt() -> String {
     s.push_str("\nChoice parameters (name: options):\n");
     for p in choice_params() {
         let _ = writeln!(s, "- {}: {}", p.name, p.options.join(", "));
+    }
+    s
+}
+
+/// Render the current patch as a compact "name: value" list, so the agent can
+/// see the actual settings before making a relative change.
+pub fn format_patch(params: &SynthParams) -> String {
+    let mut s = String::from("Current patch:\n");
+    for p in float_params() {
+        if let Some(v) = params.get_float(p.name) {
+            let _ = writeln!(s, "- {}: {}", p.name, v);
+        }
+    }
+    for p in choice_params() {
+        if let Some(v) = params.get_choice(p.name) {
+            let _ = writeln!(s, "- {}: {}", p.name, v);
+        }
     }
     s
 }
@@ -86,6 +114,10 @@ pub fn apply_tool_call(
     tool_name: &str,
     input: &Value,
 ) -> (String, bool, Option<ParamChange>) {
+    if tool_name == GET_CURRENT_PATCH {
+        return (format_patch(params), false, None);
+    }
+
     let name = input["name"].as_str().unwrap_or_default().to_string();
 
     match tool_name {

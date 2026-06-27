@@ -172,6 +172,25 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reads_current_patch_then_makes_a_relative_edit() {
+        // "brighter": the model first inspects the patch, then lowers nothing /
+        // raises cutoff relative to what it saw. The read returns no change.
+        let client = ScriptedClient::new(vec![
+            tool_use("t1", "get_current_patch", json!({})),
+            tool_use("t2", "set_parameter", json!({ "name": "osc1.filter.cutoff", "value": 12000.0 })),
+            final_text("Opened the filter up for a brighter tone."),
+        ]);
+        let mut agent = Agent::new(client);
+
+        let turn = agent.send("a bit brighter").await.unwrap();
+
+        // Only the cutoff edit counts as a change; the read does not.
+        assert_eq!(turn.changes.len(), 1);
+        assert_eq!(turn.changes[0].name, "osc1.filter.cutoff");
+        assert_eq!(agent.params().get_float("osc1.filter.cutoff"), Some(12000.0));
+    }
+
+    #[tokio::test]
     async fn errors_surface_to_the_model_without_crashing() {
         // First the model picks a bad name; we report the error; it recovers.
         let client = ScriptedClient::new(vec![
