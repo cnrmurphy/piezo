@@ -1,0 +1,13 @@
+[package]
+name = "synth-audio"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Real-time audio output for the synth, built on cpal. The only crate that depends on a platform audio backend."
+
+[dependencies]
+synth-core = { path = "../synth-core" }
+cpal = "0.15"
+crossbeam-channel = "0.5"
+anyhow = "1"

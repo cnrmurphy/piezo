@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/synth-core"]
+members = ["crates/synth-core", "crates/synth-audio"]
 
 [workspace.package]
 edition = "2021"
