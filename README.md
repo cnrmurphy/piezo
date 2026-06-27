@@ -2,10 +2,12 @@
 
 A small subtractive synthesizer with an agentic harness: shape the sound by
 describing it in plain English, the same way you'd ask an agent to write code.
-The agent adjusts the synth's parameters for you. You can also patch it by hand
-with knobs and play it from your computer keyboard.
+The agent adjusts the synth's parameters for you.
 
-Built in Rust with a Tauri desktop UI.
+## About
+I thought it would be interesting if you could have a synthesizer controlled by an AI agent. I'm mostly interested in how
+it navigates the process of synthesis. Please note that this is a prototype and therefore it is heavily vibecoded so I that
+I could experiment quickly.
 
 ## Features
 
@@ -21,18 +23,12 @@ Built in Rust with a Tauri desktop UI.
 
 ## Architecture
 
-A cargo workspace. The DSP core has no audio-backend dependency, so it builds
-and is tested anywhere; only the live-output layer needs a platform audio
-backend. The single source of truth for every parameter is the core's parameter
-table — both the UI and the agent drive the synth through it by name, so adding
-a parameter wires it into both at once.
-
 | Crate         | What it does                                                      |
 | ------------- | ---------------------------------------------------------------- |
-| `synth-core`  | Pure-Rust DSP: oscillators, filters, envelopes, LFO, voices, and the named parameter store. No audio backend. |
+| `synth-core`  | Rust DSP: oscillators, filters, envelopes, LFO, voices, and the named parameter store. |
 | `synth-audio` | Real-time output via [cpal]. The engine runs on the audio thread; callers send commands over a lock-free channel. |
 | `synth-agent` | The agentic harness: a provider-agnostic LLM trait, a Claude implementation, and a tool-use loop. Tools and the system prompt are generated from the parameter table. |
-| `synth-cli`   | A terminal REPL: describe a sound, hear it.                       |
+| `synth-cli`   | A terminal REPL                       |
 | `src-tauri` + `ui/` | The desktop app: knobs, keyboard piano, and the agent chat. |
 
 [cpal]: https://github.com/RustAudio/cpal
