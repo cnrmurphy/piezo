@@ -70,6 +70,40 @@ impl AudioHandle {
     pub fn set_params(&self, params: SynthParams) {
         let _ = self.tx.send(Command::SetParams(params));
     }
+
+    /// A `Send + Sync + Clone` handle to control the audio without owning the
+    /// stream. The cpal `Stream` itself is `!Send`, so it must stay on its
+    /// creating thread; this carries only the command channel, which can live in
+    /// shared application state (e.g. a Tauri-managed state).
+    pub fn controller(&self) -> AudioController {
+        AudioController { tx: self.tx.clone(), sample_rate: self.sample_rate }
+    }
+}
+
+/// A detachable, thread-safe handle for driving the audio engine. Obtain one
+/// from [`AudioHandle::controller`].
+#[derive(Clone)]
+pub struct AudioController {
+    tx: Sender<Command>,
+    sample_rate: f32,
+}
+
+impl AudioController {
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
+    pub fn note_on(&self, note: u8, velocity: f32) {
+        let _ = self.tx.send(Command::NoteOn { note, velocity });
+    }
+
+    pub fn note_off(&self, note: u8) {
+        let _ = self.tx.send(Command::NoteOff { note });
+    }
+
+    pub fn set_params(&self, params: SynthParams) {
+        let _ = self.tx.send(Command::SetParams(params));
+    }
 }
 
 fn build_stream(

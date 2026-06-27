@@ -49,6 +49,12 @@ impl<C: LlmClient> Agent<C> {
         &self.params
     }
 
+    /// Replace the working patch — e.g. to sync with knobs the user moved by
+    /// hand before the next turn, so relative edits start from the real state.
+    pub fn set_params(&mut self, params: SynthParams) {
+        self.params = params;
+    }
+
     /// Send a user message and run the tool loop until the model gives a final
     /// answer. Returns its reply and the parameter changes it made.
     pub async fn send(&mut self, user_message: &str) -> Result<AgentTurn> {

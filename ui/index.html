@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Synth</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Synth</h1>
+      <span id="status" class="status"></span>
+    </header>
+
+    <main>
+      <section id="controls" class="controls">
+        <!-- Knob groups are built from the parameter schema at runtime. -->
+      </section>
+
+      <aside class="side">
+        <div class="chat">
+          <div id="log" class="log"></div>
+          <form id="chat-form" class="chat-form">
+            <input
+              id="chat-input"
+              type="text"
+              autocomplete="off"
+              placeholder="Describe a sound, e.g. warm mellow pad"
+            />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+
+        <div class="keyboard-wrap">
+          <p class="hint">Play with your keyboard (A–L row) or click the keys.</p>
+          <div id="keyboard" class="keyboard"></div>
+        </div>
+      </aside>
+    </main>
+
+    <script src="main.js"></script>
+  </body>
+</html>
