@@ -1,3 +1,5 @@
 /target
 *.wav
 /src-tauri/gen
+PROJECT.md
+PLAN.md
