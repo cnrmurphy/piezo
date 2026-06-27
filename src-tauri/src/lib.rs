@@ -13,8 +13,14 @@ use serde_json::{json, Map, Value};
 use synth_agent::{Agent, ClaudeClient};
 use synth_audio::{AudioController, AudioHandle};
 use synth_core::params::{choice_params, float_params, SynthParams};
+use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex as AsyncMutex;
+use tokio::time::sleep;
+
+/// Delay between applying each agent change, so they sweep in rather than all
+/// snapping at once.
+const SWEEP_STEP: Duration = Duration::from_millis(90);
 
 struct AppState {
     audio: AudioController,
@@ -98,18 +104,38 @@ async fn chat(state: State<'_, AppState>, app: AppHandle, message: String) -> Re
     let turn = agent.send(&message).await.map_err(|e| e.to_string())?;
     let new = *agent.params();
 
+    // Stream the edits in one at a time rather than snapping the whole patch at
+    // once: start from the pre-turn patch and step each changed parameter to its
+    // final value, pushing to audio and broadcasting to the UI as we go.
+    let mut running = current;
+    for change in &turn.changes {
+        copy_param(&mut running, &new, &change.name);
+        state.audio.set_params(running);
+        let _ = app.emit("patch-changed", params_json(&running));
+        sleep(SWEEP_STEP).await;
+    }
+
+    // Land exactly on the agent's final patch (covers any subtlety the per-name
+    // replay might miss) and record it as the canonical state.
     *state.patch.lock().unwrap() = new;
     state.audio.set_params(new);
-
-    let params = params_json(&new);
-    let _ = app.emit("patch-changed", params.clone());
 
     let changes: Vec<Value> = turn
         .changes
         .iter()
         .map(|c| json!({ "name": c.name, "outcome": c.outcome }))
         .collect();
-    Ok(json!({ "reply": turn.reply, "changes": changes, "params": params }))
+    Ok(json!({ "reply": turn.reply, "changes": changes, "params": params_json(&new) }))
+}
+
+/// Copy a single named parameter's value from `src` into `dst`, whether it is a
+/// numeric or a choice parameter.
+fn copy_param(dst: &mut SynthParams, src: &SynthParams, name: &str) {
+    if let Some(v) = src.get_float(name) {
+        dst.set_float(name, v);
+    } else if let Some(v) = src.get_choice(name) {
+        dst.set_choice(name, v);
+    }
 }
 
 /// Group a parameter name by its first dotted segment (osc1, amp_env, lfo, ...).

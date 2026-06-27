@@ -79,21 +79,48 @@ function floatControl(p, value) {
   input.step = (p.max - p.min) / 200 || 0.01;
   input.value = value;
 
-  const show = (v) => {
-    val.textContent = formatValue(v, p.unit);
-    input.value = v;
-  };
-  show(value);
+  val.textContent = formatValue(value, p.unit);
+  input.value = value;
 
   input.addEventListener("input", async () => {
+    if (input._raf) cancelAnimationFrame(input._raf); // a drag cancels any sweep
     const v = Number(input.value);
     val.textContent = formatValue(v, p.unit);
     await invoke("set_param", { name: p.name, value: v });
   });
 
-  updaters.set(p.name, show);
+  // Streamed agent edits glide the slider to the new value rather than snapping.
+  updaters.set(p.name, (target) => animateFloat(input, val, p.unit, target));
   wrap.append(head, input);
   return wrap;
+}
+
+function animateFloat(input, valEl, unit, target) {
+  if (input._raf) cancelAnimationFrame(input._raf);
+  const from = Number(input.value);
+  const to = Number(target);
+  if (!isFinite(from) || from === to) {
+    input.value = to;
+    valEl.textContent = formatValue(to, unit);
+    return;
+  }
+  const duration = 150;
+  const start = performance.now();
+  const tick = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3); // ease-out cubic
+    const v = from + (to - from) * eased;
+    input.value = v;
+    valEl.textContent = formatValue(v, unit);
+    if (t < 1) {
+      input._raf = requestAnimationFrame(tick);
+    } else {
+      input._raf = null;
+      input.value = to;
+      valEl.textContent = formatValue(to, unit);
+    }
+  };
+  input._raf = requestAnimationFrame(tick);
 }
 
 function choiceControl(p, value) {
@@ -153,18 +180,40 @@ function wireChat() {
     if (!text) return;
     input.value = "";
     addMessage("user", text);
+    const thinking = addThinking();
     button.disabled = true;
+    input.disabled = true;
+    setStatus("agent working…");
     try {
       const turn = await invoke("chat", { message: text });
+      thinking.remove();
       addMessage("agent", turn.reply || "(no reply)", turn.changes);
       applyParams(turn.params);
     } catch (err) {
+      thinking.remove();
       addMessage("error", String(err));
     } finally {
       button.disabled = false;
+      input.disabled = false;
+      setStatus("");
       input.focus();
     }
   });
+}
+
+function setStatus(text) {
+  document.getElementById("status").textContent = text;
+}
+
+// An animated "the agent is working" bubble shown while a turn is in flight.
+function addThinking() {
+  const log = document.getElementById("log");
+  const el = document.createElement("div");
+  el.className = "msg agent thinking";
+  el.innerHTML = '<span class="dots"><i></i><i></i><i></i></span>';
+  log.appendChild(el);
+  log.scrollTop = log.scrollHeight;
+  return el;
 }
 
 function addMessage(kind, text, changes) {

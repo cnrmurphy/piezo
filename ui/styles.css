@@ -158,6 +158,40 @@ select {
   color: #ffd7d7;
 }
 
+.thinking .dots {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  height: 14px;
+}
+
+.thinking .dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  animation: blink 1.2s infinite ease-in-out both;
+}
+
+.thinking .dots i:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.thinking .dots i:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes blink {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
 .changes {
   font-size: 12px;
   color: var(--muted);
