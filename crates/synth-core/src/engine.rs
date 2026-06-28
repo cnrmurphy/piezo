@@ -11,7 +11,13 @@ const DEFAULT_POLYPHONY: usize = 8;
 
 pub struct Synth {
     sample_rate: f32,
+    /// The target patch (what the UI/agent set).
     params: SynthParams,
+    /// The patch the audio path actually reads, glided toward `params` each
+    /// sample so changes don't click.
+    smoothed: SynthParams,
+    /// Per-sample one-pole coefficient for that glide.
+    smooth_coef: f32,
     voices: Vec<Voice>,
     lfo: Lfo,
     reverb: Reverb,
@@ -26,9 +32,13 @@ impl Synth {
     }
 
     pub fn with_polyphony(sample_rate: f32, voices: usize) -> Self {
+        // ~8 ms one-pole smoothing time.
+        let smooth_coef = 1.0 - (-1.0 / (0.008 * sample_rate)).exp();
         Self {
             sample_rate,
             params: SynthParams::default(),
+            smoothed: SynthParams::default(),
+            smooth_coef,
             voices: (0..voices.max(1)).map(|_| Voice::new(sample_rate)).collect(),
             lfo: Lfo::new(sample_rate),
             reverb: Reverb::new(sample_rate),
@@ -102,14 +112,18 @@ impl Synth {
                 self.note_on(note, velocity);
             }
 
-            let lfo = self.lfo.next_sample(self.params.lfo.rate);
+            // Glide the audio-path patch toward the target so changes are smooth.
+            self.smoothed.smooth_towards(&self.params, self.smooth_coef);
+            let p = &self.smoothed;
+
+            let lfo = self.lfo.next_sample(p.lfo.rate);
             let mut mix = 0.0;
             for v in &mut self.voices {
-                mix += v.next_sample(&self.params, lfo);
+                mix += v.next_sample(p, lfo);
             }
-            let rv = self.params.reverb;
+            let rv = p.reverb;
             let wet = self.reverb.process(mix, rv.mix, rv.size, rv.decay);
-            *sample = (wet * self.params.master_volume).clamp(-1.0, 1.0);
+            *sample = (wet * p.master_volume).clamp(-1.0, 1.0);
         }
     }
 }

@@ -241,6 +241,43 @@ impl SynthParams {
     pub fn get_choice(&self, name: &str) -> Option<&'static str> {
         choice_params().iter().find(|p| p.name == name).map(|p| (p.get)(self))
     }
+
+    /// Move the continuous, audio-rate controls one step toward `target` (a
+    /// one-pole glide with coefficient `c` in `(0, 1]`), and copy the rest
+    /// (waveforms, filter modes, envelope times) instantly. The engine calls
+    /// this per sample so that a sudden parameter change — a filter sweep, a
+    /// volume jump, or an agent edit — ramps smoothly instead of clicking.
+    ///
+    /// Hand-written rather than table-driven on purpose: this runs on the audio
+    /// thread, so it must not allocate (the descriptor tables do).
+    pub fn smooth_towards(&mut self, target: &SynthParams, c: f32) {
+        let lerp = |cur: f32, tgt: f32| cur + (tgt - cur) * c;
+        for i in 0..2 {
+            self.osc[i].tune = lerp(self.osc[i].tune, target.osc[i].tune);
+            self.osc[i].fine = lerp(self.osc[i].fine, target.osc[i].fine);
+            self.osc[i].level = lerp(self.osc[i].level, target.osc[i].level);
+            self.osc[i].waveform = target.osc[i].waveform;
+
+            self.filter[i].cutoff = lerp(self.filter[i].cutoff, target.filter[i].cutoff);
+            self.filter[i].resonance = lerp(self.filter[i].resonance, target.filter[i].resonance);
+            self.filter[i].mode = target.filter[i].mode;
+        }
+
+        // Envelope times are not audio-rate signals; copy them directly.
+        self.amp_env = target.amp_env;
+        self.filter_env.env = target.filter_env.env;
+        self.filter_env.amount = lerp(self.filter_env.amount, target.filter_env.amount);
+
+        self.lfo.rate = target.lfo.rate;
+        self.lfo.depth = lerp(self.lfo.depth, target.lfo.depth);
+        self.lfo.target = target.lfo.target;
+
+        self.reverb.mix = lerp(self.reverb.mix, target.reverb.mix);
+        self.reverb.size = target.reverb.size;
+        self.reverb.decay = lerp(self.reverb.decay, target.reverb.decay);
+
+        self.master_volume = lerp(self.master_volume, target.master_volume);
+    }
 }
 
 #[cfg(test)]
