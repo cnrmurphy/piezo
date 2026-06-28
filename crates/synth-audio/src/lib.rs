@@ -133,9 +133,10 @@ fn build_stream(
     rx: Receiver<Command>,
     channels: usize,
 ) -> Result<cpal::Stream> {
-    // Scratch buffer for one block of mono audio, reused across callbacks so the
-    // realtime thread never allocates.
-    let mut mono = Vec::new();
+    // Scratch buffers for one block of stereo audio, reused across callbacks so
+    // the realtime thread never allocates.
+    let mut left = Vec::new();
+    let mut right = Vec::new();
 
     let stream = device
         .build_output_stream(
@@ -156,14 +157,21 @@ fn build_stream(
                     }
                 }
 
-                let frames = data.len() / channels;
-                mono.resize(frames, 0.0);
-                synth.render(&mut mono);
+                let frames = data.len() / channels.max(1);
+                left.resize(frames, 0.0);
+                right.resize(frames, 0.0);
+                synth.render(&mut left, &mut right);
 
-                // Fan the mono signal out to every output channel.
-                for (frame, &s) in data.chunks_mut(channels).zip(mono.iter()) {
-                    for sample in frame.iter_mut() {
-                        *sample = s;
+                // Write the stereo signal into the interleaved output buffer.
+                // On a mono device, downmix; otherwise left/right alternate and
+                // any extra channels mirror the pair.
+                for (frame, (&l, &r)) in data.chunks_mut(channels).zip(left.iter().zip(right.iter())) {
+                    if channels == 1 {
+                        frame[0] = 0.5 * (l + r);
+                    } else {
+                        for (i, sample) in frame.iter_mut().enumerate() {
+                            *sample = if i % 2 == 0 { l } else { r };
+                        }
                     }
                 }
             },

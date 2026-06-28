@@ -60,6 +60,8 @@ pub struct SynthParams {
     pub filter_env: FilterEnvParams,
     pub lfo: LfoParams,
     pub reverb: ReverbParams,
+    /// Stereo spread of the voices across the field, `[0, 1]`. 0 = centered.
+    pub stereo_width: f32,
     pub master_volume: f32,
 }
 
@@ -94,6 +96,7 @@ impl Default for SynthParams {
                 size: 0.5,
                 decay: 0.5,
             },
+            stereo_width: 0.0,
             master_volume: 0.8,
         }
     }
@@ -165,6 +168,7 @@ pub fn float_params() -> Vec<FloatParam> {
         fp("reverb.size",  "Reverb Size",  0.0, 1.0, 0.5, "", |p| p.reverb.size,  |p, v| p.reverb.size = v),
         fp("reverb.decay", "Reverb Decay", 0.0, 1.0, 0.5, "", |p| p.reverb.decay, |p, v| p.reverb.decay = v),
 
+        fp("master.width",  "Stereo Width",  0.0, 1.0, 0.0, "", |p| p.stereo_width,  |p, v| p.stereo_width = v),
         fp("master.volume", "Master Volume", 0.0, 1.0, 0.8, "", |p| p.master_volume, |p, v| p.master_volume = v),
     ]
 }
@@ -276,6 +280,7 @@ impl SynthParams {
         self.reverb.size = target.reverb.size;
         self.reverb.decay = lerp(self.reverb.decay, target.reverb.decay);
 
+        self.stereo_width = lerp(self.stereo_width, target.stereo_width);
         self.master_volume = lerp(self.master_volume, target.master_volume);
     }
 }

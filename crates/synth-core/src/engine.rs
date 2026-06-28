@@ -1,6 +1,8 @@
 //! The playable synth: owns the patch, a pool of voices, and the global LFO.
 //! Drive it with `note_on`/`note_off` and pull audio with `render`.
 
+use std::f32::consts::FRAC_PI_2;
+
 use crate::lfo::Lfo;
 use crate::params::SynthParams;
 use crate::reverb::Reverb;
@@ -8,6 +10,19 @@ use crate::sequencer::Sequencer;
 use crate::voice::Voice;
 
 const DEFAULT_POLYPHONY: usize = 8;
+
+/// Pan position in `[-1, 1]` for a note, spread by `width`. Lower notes pan
+/// left, higher notes right (keyboard panning); `width` 0 keeps everything
+/// centered, which sums to mono.
+fn voice_pan(note: u8, width: f32) -> f32 {
+    (((note as f32 - 60.0) / 36.0).clamp(-1.0, 1.0)) * width.clamp(0.0, 1.0)
+}
+
+/// Equal-power left/right gains for a pan position in `[-1, 1]`.
+fn pan_gains(pan: f32) -> (f32, f32) {
+    let angle = (pan * 0.5 + 0.5) * FRAC_PI_2;
+    (angle.cos(), angle.sin())
+}
 
 pub struct Synth {
     sample_rate: f32,
@@ -99,10 +114,11 @@ impl Synth {
         self.voices.iter().filter(|v| v.is_active()).count()
     }
 
-    /// Render a block of mono samples, summing all voices and applying master
-    /// volume. A soft clamp keeps stacked voices from hard-clipping.
-    pub fn render(&mut self, out: &mut [f32]) {
-        for sample in out.iter_mut() {
+    /// Render a block of stereo samples into the `left` and `right` buffers
+    /// (which must be the same length). Voices are panned across the field by
+    /// `stereo_width`, then the stereo reverb and master volume are applied.
+    pub fn render(&mut self, left: &mut [f32], right: &mut [f32]) {
+        for (sample_l, sample_r) in left.iter_mut().zip(right.iter_mut()) {
             // Advance the sequencer; it may release/trigger notes this sample.
             let tick = self.sequencer.tick();
             if let Some(note) = tick.release {
@@ -117,13 +133,19 @@ impl Synth {
             let p = &self.smoothed;
 
             let lfo = self.lfo.next_sample(p.lfo.rate);
-            let mut mix = 0.0;
+            let mut bus_l = 0.0;
+            let mut bus_r = 0.0;
             for v in &mut self.voices {
-                mix += v.next_sample(p, lfo);
+                let mono = v.next_sample(p, lfo);
+                let (gain_l, gain_r) = pan_gains(voice_pan(v.note(), p.stereo_width));
+                bus_l += mono * gain_l;
+                bus_r += mono * gain_r;
             }
+
             let rv = p.reverb;
-            let wet = self.reverb.process(mix, rv.mix, rv.size, rv.decay);
-            *sample = (wet * p.master_volume).clamp(-1.0, 1.0);
+            let (wet_l, wet_r) = self.reverb.process(bus_l, bus_r, rv.mix, rv.size, rv.decay);
+            *sample_l = (wet_l * p.master_volume).clamp(-1.0, 1.0);
+            *sample_r = (wet_r * p.master_volume).clamp(-1.0, 1.0);
         }
     }
 }
@@ -137,27 +159,33 @@ mod tests {
         (s / buf.len() as f64).sqrt() as f32
     }
 
+    /// Render `n` stereo samples and return `(left, right)`.
+    fn render(synth: &mut Synth, n: usize) -> (Vec<f32>, Vec<f32>) {
+        let mut left = vec![0.0; n];
+        let mut right = vec![0.0; n];
+        synth.render(&mut left, &mut right);
+        (left, right)
+    }
+
     #[test]
     fn silent_until_note_played() {
         let mut synth = Synth::new(48_000.0);
-        let mut buf = vec![0.0; 4_800];
-        synth.render(&mut buf);
-        assert_eq!(rms(&buf), 0.0);
+        let (l, r) = render(&mut synth, 4_800);
+        assert_eq!(rms(&l), 0.0);
+        assert_eq!(rms(&r), 0.0);
     }
 
     #[test]
     fn note_on_produces_sound_note_off_decays_to_silence() {
         let mut synth = Synth::new(48_000.0);
         synth.note_on(69, 1.0); // A4
-        let mut buf = vec![0.0; 4_800];
-        synth.render(&mut buf);
-        assert!(rms(&buf) > 0.01, "note should make sound, rms={}", rms(&buf));
+        let (l, _) = render(&mut synth, 4_800);
+        assert!(rms(&l) > 0.01, "note should make sound, rms={}", rms(&l));
         assert!(synth.active_voices() >= 1);
 
         synth.note_off(69);
         // Render well past the release time; voice should free itself.
-        let mut tail = vec![0.0; 48_000];
-        synth.render(&mut tail);
+        render(&mut synth, 48_000);
         assert_eq!(synth.active_voices(), 0, "voice should free after release");
     }
 
@@ -168,9 +196,8 @@ mod tests {
         synth.sequencer().set_step(0, true, 60);
         synth.sequencer().set_running(true);
         // Render a few steps' worth of audio; no note_on was called by hand.
-        let mut buf = vec![0.0; 24_000];
-        synth.render(&mut buf);
-        assert!(rms(&buf) > 0.01, "sequencer should drive voices, rms={}", rms(&buf));
+        let (l, _) = render(&mut synth, 24_000);
+        assert!(rms(&l) > 0.01, "sequencer should drive voices, rms={}", rms(&l));
     }
 
     #[test]
@@ -180,8 +207,19 @@ mod tests {
         for n in 60..68 {
             synth.note_on(n, 1.0);
         }
-        let mut buf = vec![0.0; 9_600];
-        synth.render(&mut buf);
-        assert!(buf.iter().all(|s| (-1.0..=1.0).contains(s)));
+        let (l, r) = render(&mut synth, 9_600);
+        assert!(l.iter().chain(r.iter()).all(|s| (-1.0..=1.0).contains(s)));
+    }
+
+    #[test]
+    fn width_pans_low_and_high_notes_apart() {
+        let mut synth = Synth::new(48_000.0);
+        let mut p = SynthParams::default();
+        p.stereo_width = 1.0;
+        synth.set_params(p);
+        // Force the smoothed width to settle to 1.0 before measuring.
+        synth.note_on(36, 1.0); // low note -> should favour the left
+        let (l, r) = render(&mut synth, 24_000);
+        assert!(rms(&l) > rms(&r) * 1.3, "low note should lean left: l={}, r={}", rms(&l), rms(&r));
     }
 }

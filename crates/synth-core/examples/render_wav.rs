@@ -29,10 +29,14 @@ fn main() {
     p.set_choice("lfo.target", "pitch");
     p.set_float("lfo.rate", 5.0);
     p.set_float("lfo.depth", 0.15);
+    // Show off the stereo field and reverb.
+    p.set_float("master.width", 0.8);
+    p.set_float("reverb.mix", 0.3);
+    p.set_float("reverb.size", 0.7);
     synth.set_params(p);
 
     let spec = hound::WavSpec {
-        channels: 1,
+        channels: 2,
         sample_rate: sample_rate as u32,
         bits_per_sample: 16,
         sample_format: hound::SampleFormat::Int,
@@ -43,15 +47,16 @@ fn main() {
     let notes = [60, 63, 67, 72, 67, 63];
     let note_samples = (sample_rate * 0.35) as usize;
     let hold_samples = (sample_rate * 0.25) as usize;
-    let mut block = vec![0.0f32; 512];
+    let mut left = vec![0.0f32; 512];
+    let mut right = vec![0.0f32; 512];
 
     for &note in &notes {
         synth.note_on(note, 0.9);
         let mut rendered = 0;
         while rendered < note_samples {
-            let n = block.len().min(note_samples - rendered);
-            synth.render(&mut block[..n]);
-            write_block(&mut writer, &block[..n]);
+            let n = left.len().min(note_samples - rendered);
+            synth.render(&mut left[..n], &mut right[..n]);
+            write_block(&mut writer, &left[..n], &right[..n]);
             if rendered == hold_samples {
                 synth.note_off(note);
             }
@@ -61,20 +66,23 @@ fn main() {
 
     // Let the final release tail ring out.
     for _ in 0..((sample_rate * 0.6) as usize / 512) {
-        synth.render(&mut block);
-        write_block(&mut writer, &block);
+        synth.render(&mut left, &mut right);
+        write_block(&mut writer, &left, &right);
     }
 
     writer.finalize().expect("finalize wav");
     println!("wrote synth-demo.wav");
 }
 
+/// Write interleaved stereo samples (left, right, left, right, ...).
 fn write_block<W: std::io::Write + std::io::Seek>(
     writer: &mut hound::WavWriter<W>,
-    block: &[f32],
+    left: &[f32],
+    right: &[f32],
 ) {
-    for &s in block {
-        let v = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-        writer.write_sample(v).expect("write sample");
+    for (&l, &r) in left.iter().zip(right.iter()) {
+        let to_i16 = |s: f32| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        writer.write_sample(to_i16(l)).expect("write sample");
+        writer.write_sample(to_i16(r)).expect("write sample");
     }
 }
