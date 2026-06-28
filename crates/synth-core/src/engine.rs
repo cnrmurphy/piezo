@@ -4,6 +4,7 @@
 use crate::lfo::Lfo;
 use crate::params::SynthParams;
 use crate::reverb::Reverb;
+use crate::sequencer::Sequencer;
 use crate::voice::Voice;
 
 const DEFAULT_POLYPHONY: usize = 8;
@@ -14,6 +15,7 @@ pub struct Synth {
     voices: Vec<Voice>,
     lfo: Lfo,
     reverb: Reverb,
+    sequencer: Sequencer,
     /// Round-robin pointer for voice stealing.
     next_voice: usize,
 }
@@ -30,6 +32,7 @@ impl Synth {
             voices: (0..voices.max(1)).map(|_| Voice::new(sample_rate)).collect(),
             lfo: Lfo::new(sample_rate),
             reverb: Reverb::new(sample_rate),
+            sequencer: Sequencer::new(sample_rate),
             next_voice: 0,
         }
     }
@@ -48,6 +51,15 @@ impl Synth {
 
     pub fn set_params(&mut self, params: SynthParams) {
         self.params = params;
+    }
+
+    /// Mutable access to the step sequencer (transport, tempo, steps).
+    pub fn sequencer(&mut self) -> &mut Sequencer {
+        &mut self.sequencer
+    }
+
+    pub fn sequencer_ref(&self) -> &Sequencer {
+        &self.sequencer
     }
 
     /// Start a note. `velocity` is `[0, 1]`. Prefers a free voice, else steals
@@ -81,6 +93,15 @@ impl Synth {
     /// volume. A soft clamp keeps stacked voices from hard-clipping.
     pub fn render(&mut self, out: &mut [f32]) {
         for sample in out.iter_mut() {
+            // Advance the sequencer; it may release/trigger notes this sample.
+            let tick = self.sequencer.tick();
+            if let Some(note) = tick.release {
+                self.note_off(note);
+            }
+            if let Some((note, velocity)) = tick.trigger {
+                self.note_on(note, velocity);
+            }
+
             let lfo = self.lfo.next_sample(self.params.lfo.rate);
             let mut mix = 0.0;
             for v in &mut self.voices {
@@ -124,6 +145,18 @@ mod tests {
         let mut tail = vec![0.0; 48_000];
         synth.render(&mut tail);
         assert_eq!(synth.active_voices(), 0, "voice should free after release");
+    }
+
+    #[test]
+    fn running_sequencer_produces_sound_without_manual_notes() {
+        let mut synth = Synth::new(48_000.0);
+        synth.sequencer().set_tempo(120.0);
+        synth.sequencer().set_step(0, true, 60);
+        synth.sequencer().set_running(true);
+        // Render a few steps' worth of audio; no note_on was called by hand.
+        let mut buf = vec![0.0; 24_000];
+        synth.render(&mut buf);
+        assert!(rms(&buf) > 0.01, "sequencer should drive voices, rms={}", rms(&buf));
     }
 
     #[test]

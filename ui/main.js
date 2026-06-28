@@ -25,6 +25,7 @@ async function init() {
   const params = await invoke("get_params");
   buildControls(schema, params);
   buildKeyboard();
+  await buildSequencer();
   wireChat();
   wireComputerKeyboard();
 
@@ -297,6 +298,104 @@ function wireComputerKeyboard() {
 
 function typingInChat(e) {
   return e.target && e.target.id === "chat-input";
+}
+
+// --- Step sequencer --------------------------------------------------------
+
+let seqLength = 16;
+
+async function buildSequencer() {
+  const s = await invoke("seq_state");
+  seqLength = s.length;
+
+  const playBtn = document.getElementById("seq-play");
+  const tempo = document.getElementById("seq-tempo");
+  const lengthSel = document.getElementById("seq-length");
+  const grid = document.getElementById("seq-grid");
+
+  let running = s.running;
+  const renderPlay = () => {
+    playBtn.textContent = running ? "Stop" : "Play";
+    playBtn.classList.toggle("on", running);
+  };
+  renderPlay();
+  playBtn.addEventListener("click", async () => {
+    running = !running;
+    renderPlay();
+    await invoke("seq_set_running", { running });
+  });
+
+  tempo.value = Math.round(s.bpm);
+  tempo.addEventListener("change", async () => {
+    const bpm = Math.min(300, Math.max(20, Number(tempo.value) || 120));
+    tempo.value = bpm;
+    await invoke("seq_set_tempo", { bpm });
+  });
+
+  for (let i = 1; i <= 16; i++) {
+    const o = document.createElement("option");
+    o.value = i;
+    o.textContent = i;
+    lengthSel.appendChild(o);
+  }
+  lengthSel.value = s.length;
+
+  const cells = [];
+  const updateDisabled = () =>
+    cells.forEach((c, i) => c.classList.toggle("disabled", i >= seqLength));
+
+  lengthSel.addEventListener("change", async () => {
+    seqLength = Number(lengthSel.value);
+    await invoke("seq_set_length", { length: seqLength });
+    updateDisabled();
+  });
+
+  s.steps.forEach((step, i) => {
+    const col = document.createElement("div");
+    col.className = "seq-step";
+
+    let active = step.active;
+    let note = step.note;
+    const send = () => invoke("seq_set_step", { index: i, active, note });
+
+    const pad = document.createElement("button");
+    pad.type = "button";
+    pad.className = "seq-pad" + (active ? " active" : "");
+    const name = document.createElement("span");
+    name.className = "seq-note-name";
+    name.textContent = midiLabel(note);
+    pad.appendChild(name);
+    pad.addEventListener("click", () => {
+      active = !active;
+      pad.classList.toggle("active", active);
+      send();
+    });
+
+    const noteInput = document.createElement("input");
+    noteInput.type = "number";
+    noteInput.min = 24;
+    noteInput.max = 96;
+    noteInput.value = note;
+    noteInput.className = "seq-note";
+    noteInput.addEventListener("change", () => {
+      note = Math.min(96, Math.max(24, Number(noteInput.value) || 60));
+      noteInput.value = note;
+      name.textContent = midiLabel(note);
+      send();
+    });
+
+    col.append(pad, noteInput);
+    grid.appendChild(col);
+    cells.push(col);
+  });
+
+  updateDisabled();
+}
+
+// MIDI note number to a name with octave (60 = C4).
+function midiLabel(m) {
+  const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+  return names[((m % 12) + 12) % 12] + (Math.floor(m / 12) - 1);
 }
 
 window.addEventListener("DOMContentLoaded", () => {

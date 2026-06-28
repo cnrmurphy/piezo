@@ -18,6 +18,10 @@ pub enum Command {
     /// Replace the whole patch. `SynthParams` is plain `Copy` data, so sending a
     /// fresh snapshot is cheaper and simpler than streaming individual edits.
     SetParams(SynthParams),
+    SeqRunning(bool),
+    SeqTempo(f32),
+    SeqLength(usize),
+    SeqStep { index: usize, active: bool, note: u8 },
 }
 
 /// Owns the audio stream and the sending end of the command channel. Dropping it
@@ -104,6 +108,22 @@ impl AudioController {
     pub fn set_params(&self, params: SynthParams) {
         let _ = self.tx.send(Command::SetParams(params));
     }
+
+    pub fn seq_set_running(&self, running: bool) {
+        let _ = self.tx.send(Command::SeqRunning(running));
+    }
+
+    pub fn seq_set_tempo(&self, bpm: f32) {
+        let _ = self.tx.send(Command::SeqTempo(bpm));
+    }
+
+    pub fn seq_set_length(&self, length: usize) {
+        let _ = self.tx.send(Command::SeqLength(length));
+    }
+
+    pub fn seq_set_step(&self, index: usize, active: bool, note: u8) {
+        let _ = self.tx.send(Command::SeqStep { index, active, note });
+    }
 }
 
 fn build_stream(
@@ -127,6 +147,12 @@ fn build_stream(
                         Command::NoteOn { note, velocity } => synth.note_on(note, velocity),
                         Command::NoteOff { note } => synth.note_off(note),
                         Command::SetParams(p) => synth.set_params(p),
+                        Command::SeqRunning(r) => synth.sequencer().set_running(r),
+                        Command::SeqTempo(b) => synth.sequencer().set_tempo(b),
+                        Command::SeqLength(n) => synth.sequencer().set_length(n),
+                        Command::SeqStep { index, active, note } => {
+                            synth.sequencer().set_step(index, active, note)
+                        }
                     }
                 }
 

@@ -13,6 +13,7 @@ use serde_json::{json, Map, Value};
 use synth_agent::{Agent, ClaudeClient};
 use synth_audio::{AudioController, AudioHandle};
 use synth_core::params::{choice_params, float_params, SynthParams};
+use synth_core::sequencer::Sequencer;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::sync::Mutex as AsyncMutex;
@@ -29,6 +30,10 @@ struct AppState {
     /// `None` when `ANTHROPIC_API_KEY` is unset — the UI still works, but chat
     /// reports that the agent is unavailable.
     agent: AsyncMutex<Option<Agent<ClaudeClient>>>,
+    /// UI-side mirror of the sequencer. The authoritative sequencer runs on the
+    /// audio thread; this copy is never ticked, it just tracks the configuration
+    /// so the UI can be served its current state.
+    seq: Mutex<Sequencer>,
 }
 
 /// The parameter catalog (names, ranges, options), so the UI can build controls
@@ -87,6 +92,50 @@ fn note_on(state: State<'_, AppState>, note: u8, velocity: f32) {
 #[tauri::command]
 fn note_off(state: State<'_, AppState>, note: u8) {
     state.audio.note_off(note);
+}
+
+/// The sequencer's current configuration, for building its UI.
+#[tauri::command]
+fn seq_state(state: State<'_, AppState>) -> Value {
+    seq_json(&state.seq.lock().unwrap())
+}
+
+#[tauri::command]
+fn seq_set_running(state: State<'_, AppState>, running: bool) {
+    state.seq.lock().unwrap().set_running(running);
+    state.audio.seq_set_running(running);
+}
+
+#[tauri::command]
+fn seq_set_tempo(state: State<'_, AppState>, bpm: f32) {
+    state.seq.lock().unwrap().set_tempo(bpm);
+    state.audio.seq_set_tempo(bpm);
+}
+
+#[tauri::command]
+fn seq_set_length(state: State<'_, AppState>, length: usize) {
+    state.seq.lock().unwrap().set_length(length);
+    state.audio.seq_set_length(length);
+}
+
+#[tauri::command]
+fn seq_set_step(state: State<'_, AppState>, index: usize, active: bool, note: u8) {
+    state.seq.lock().unwrap().set_step(index, active, note);
+    state.audio.seq_set_step(index, active, note);
+}
+
+fn seq_json(seq: &Sequencer) -> Value {
+    let steps: Vec<Value> = seq
+        .steps()
+        .iter()
+        .map(|s| json!({ "active": s.active, "note": s.note }))
+        .collect();
+    json!({
+        "running": seq.is_running(),
+        "bpm": seq.bpm(),
+        "length": seq.length(),
+        "steps": steps,
+    })
 }
 
 /// Run one agent turn. Syncs the agent with the current patch first (so it sees
@@ -196,16 +245,20 @@ pub fn run() {
         eprintln!("note: ANTHROPIC_API_KEY not set — running without the agent");
     }
 
+    let seq = Sequencer::new(audio.sample_rate());
+
     let state = AppState {
         audio,
         patch: Mutex::new(initial),
         agent: AsyncMutex::new(agent),
+        seq: Mutex::new(seq),
     };
 
     tauri::Builder::default()
         .manage(state)
         .invoke_handler(tauri::generate_handler![
-            get_schema, get_params, set_param, set_choice, note_on, note_off, chat
+            get_schema, get_params, set_param, set_choice, note_on, note_off, chat,
+            seq_state, seq_set_running, seq_set_tempo, seq_set_length, seq_set_step
         ])
         .setup(|app| {
             // Make sure the window is shown on launch.

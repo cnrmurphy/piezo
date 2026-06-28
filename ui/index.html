@@ -38,6 +38,18 @@
       </aside>
     </main>
 
+    <section id="sequencer" class="sequencer">
+      <div class="seq-transport">
+        <button id="seq-play" type="button">Play</button>
+        <label>Tempo <input id="seq-tempo" type="number" min="20" max="300" step="1" /> BPM</label>
+        <label>Steps
+          <select id="seq-length"></select>
+        </label>
+        <span class="hint">Click a pad to toggle it; set each step's note below.</span>
+      </div>
+      <div id="seq-grid" class="seq-grid"></div>
+    </section>
+
     <script src="main.js"></script>
   </body>
 </html>
